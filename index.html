@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>独自03_dualPanels_v3 — 左=正方形49分割 / 右=テキスト or 音声のみ</title>
+<style>
+  :root{
+    --w:640px; --fg:#fff; --acc:#ffd54a;
+    /* v2より少しだけ縮小（ご要望に合わせて微調整） */
+    --posterScale: 1.25;    /* Poster（EN/JP）文字の倍率 */
+    --rightTextScale: 1.20; /* 右テキストの倍率 */
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:#111; color:var(--fg);
+    font-family: system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans JP",Meiryo,sans-serif;
+    display:flex; min-height:100vh; align-items:center; justify-content:center; padding:16px;
+  }
+  .app{ width:min(var(--w),95vw); }
+  .bar{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:10px 0; }
+  .sp{ flex:1 }
+  select,button,label{ background:#1a1a1a; color:#fff; border:1px solid #333; border-radius:10px; padding:8px 12px; font-size:14px; }
+  button.primary{ background:var(--acc); color:#222; border-color:#cc9; }
+
+  /* ステージ（16:9 高さゼロ対策） */
+  .stage{ position:relative; width:100%; background:#000; border:1px solid #222; border-radius:12px; overflow:hidden; }
+  .stage::before{ content:""; display:block; padding-top:56.25%; }
+  .viewport{ position:absolute; inset:0; }
+
+  /* 単面：文字ポスター（Vertical OFF 時） */
+  .single{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .textPoster{
+    width:100%; height:100%; background:#000; color:#fff;
+    display:flex; align-items:center; justify-content:center;
+    text-align:center; line-height:1.8; padding:26px; white-space:pre-wrap;
+    font-size: clamp(12px, calc(3.6vw * var(--posterScale)), 26px);
+    letter-spacing:.02em;
+  }
+
+  /* 2ペイン（Vertical ON） */
+  .twopane{ position:absolute; inset:0; display:grid; grid-template-columns:46% 54%; gap:0; }
+  .leftPane, .rightPane{ position:relative; overflow:hidden; }
+
+  /* 左パネル：正方形（1:1） */
+  .leftPaneInner{ position:absolute; left:0; top:50%; width:100%; transform:translateY(-50%); }
+  .leftPaneInner::before{ content:""; display:block; padding-top:100%; } /* 正方形 */
+  .leftVP{ position:absolute; inset:0; }
+
+  .grid7{ position:absolute; inset:0; display:none; }
+  .grid7 .tile{
+    position:absolute; background-repeat:no-repeat;
+    opacity:0; transition: transform 1.2s ease, opacity 1.2s ease;
+    will-change: transform, opacity;
+  }
+
+  /* 右：静止画像 or テキスト or 音声のみ（黒画面） */
+  .rightImg{ position:absolute; inset:0; }
+  .rightImg img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .rightText{ position:absolute; inset:0; background:#000; color:#fff; padding:20px; display:flex; align-items:center; justify-content:center; }
+  .rightText .content{
+    max-width:94%; white-space:pre-wrap; line-height:1.8; text-align:left;
+    font-size: clamp(12px, calc(3.2vw * var(--rightTextScale)), 24px);
+    letter-spacing:.02em;
+  }
+  .rightAudioOnly{ position:absolute; inset:0; background:#000; }
+
+  /* 右：サウンド */
+  .soundBar{
+    position:absolute; right:10px; bottom:10px; display:flex; gap:8px; z-index:5;
+    background:rgba(0,0,0,.6); border:1px solid #444; border-radius:10px; padding:6px 8px;
+  }
+  .soundBar button{ background:#222; border:1px solid #555; border-radius:8px; padding:6px 10px; color:#fff; }
+  .soundBar button:hover{ background:#333; }
+
+  /* キャプション */
+  .caption{
+    position:absolute; left:0; right:0; bottom:0; padding:10px 12px;
+    background:linear-gradient(180deg,rgba(0,0,0,0) 0%,rgba(0,0,0,.65) 40%,rgba(0,0,0,.75) 100%);
+    font-size:13px; z-index:3;
+  }
+
+  .hidden{ display:none !important; }
+
+/* 左パネル 最終画像（80%） */
+.leftFinal{
+  position:absolute;
+  inset:0;
+  display:grid;
+  place-items:center;
+  pointer-events:none;
+}
+.leftFinal img{
+  width:110%;
+  height:110%;
+  object-fit:cover;      /* 正方形いっぱいに収め、切れる方向はカバー */
+  transform:scale(0.9);  /* ← ここが 80% 指定 */
+  transform-origin:center;
+}
+
+/* 寄せ指定：A3/A4/B1→右寄せ / B2/B3/B4→左寄せ */
+.leftFinal.right img { object-position: left center; } /* 右寄せ＝右側を見せる */
+.leftFinal.left  img { object-position: right  center; } /* 左寄せ＝左側を見せる */
+
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="bar">
+    <label>Pick
+      <select id="pick">
+        <option value="A1">A1 — Komachi (009)</option>
+        <option value="A2" selected>A2 — Ryōzen (070)</option>
+        <option value="A3">A3 — Sosei (021)</option>
+        <option value="A4">A4 — Akahito (004)</option>
+        <option value="B1">B1 — Atsutada (043)</option>
+        <option value="B2">B2 — Saigyō (086)</option>
+        <option value="B3">B3 — Ōe no Chisato (023)</option>
+        <option value="B4">B4 — Sagami (065)</option>
+      </select>
+    </label>
+    <label>Poster
+      <select id="posterLang">
+        <option value="jp" selected>JP</option>
+        <option value="en">EN</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="vertical" checked> Vertical ON (JP)</label>
+    <label>Right Panel
+      <select id="rightSrc">
+        <option value="egypt" selected>egypt_*.jpg → EN text</option>
+        <option value="scene">scene_*.jpg → (EN)Voice only</option>
+        <option value="background">background_*.jpg → (JP)Voice only</option>
+      </select>
+    </label>
+    <div class="sp"></div>
+    <button id="show" class="primary">Show</button>
+  </div>
+
+  <div class="stage">
+    <div class="viewport">
+      <!-- Poster（Vertical OFF） -->
+      <div id="single" class="single hidden">
+        <div id="posterText" class="textPoster"></div>
+      </div>
+
+      <!-- Vertical ON：2ペイン -->
+      <div id="two" class="twopane hidden">
+        <div class="leftPane">
+          <div class="leftPaneInner">
+            <div class="leftVP" id="leftVP">
+              <div id="grid" class="grid7"></div>
+            </div>
+          </div>
+        </div>
+        <div class="rightPane">
+          <div id="rightImg" class="rightImg hidden"><img id="rightImgTag" alt=""></div>
+          <div id="rightText" class="rightText hidden"><div class="content" id="rightTextContent"></div></div>
+          <div id="rightAudioOnly" class="rightAudioOnly hidden"></div>
+          <div class="soundBar hidden" id="soundBar">
+            <button id="playEN" class="hidden">EN Voice</button>
+            <button id="playJP" class="hidden">JP Voice</button>
+            <audio id="audioEN"></audio>
+            <audio id="audioJP"></audio>
+          </div>
+        </div>
+      </div>
+
+      <div class="caption" id="cap"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const poemIdMap = { A1:'009', A2:'070', A3:'021', A4:'004', B1:'043', B2:'086', B3:'023', B4:'065' };
+  const poet = {
+    '009':'Ono no Komachi','070':'Ryōzen Hōshi','021':'Sosei Hōshi','004':'Yamabe no Akahito',
+    '043':'Fujiwara no Atsutada','086':'Saigyō Hōshi','023':'Ōe no Chisato','065':'Sagami'
+  };
+
+  // JP/EN テキスト（横書き）
+  const jpText = {
+    A1:`花の色は うつりにけりな いたづらに
+わが身世にふる ながめせしまに
+— 小野小町`,
+    A2:`さびしさに 宿を立ち出でて ながむれば
+いづこも同じ 秋の夕暮れ
+— 良暹法師`,
+    A3:`今来むと いひしばかりに 長月の
+有明の月を 待ち出でつるかな
+— 素性法師`,
+    A4:`田子の浦に うち出でてみれば 白妙の
+富士の高嶺に 雪は降りつつ
+— 山部赤人`,
+    B1:`逢ひ見ての のちの心に くらぶれば
+昔は物を 思はざりけり
+— 藤原敦忠`,
+    B2:`嘆けとて 月やは物を 思はする
+かこち顔なる わが涙かな
+— 西行法師`,
+    B3:`月みれば ちぢにものこそ 悲しけれ
+わが身一つの 秋にはあらねど
+— 大江千里`,
+    B4:`恨みわび ほさぬ袖だに あるものを
+恋に朽ちなむ 名こそをしけれ
+— 相模`
+  };
+  const enText = {
+    A1:`The colors of flowers fade away in vain,
+As in this fleeting world my life drifts on in endless rains.
+— Ono no Komachi`,
+    A2:`Lonely, I stepped outside my hut and looked—
+Everywhere the same: an autumn evening.
+— Ryōzen Hōshi`,
+    A3:`“I’ll come tonight,” you said—so I stayed up,
+Waiting for the long month’s dawning moon.
+— Sosei Hōshi`,
+    A4:`At Tago Bay I came out and beheld:
+Pure white snow falling on Mount Fuji’s lofty peak.
+— Yamabe no Akahito`,
+    B1:`Compared with how my heart has been since we met,
+In former days I scarcely knew what longing was.
+— Fujiwara no Atsutada`,
+    B2:`“Lament!”—does the moon make me grieve?
+No—my tears themselves blame the moon.
+— Saigyō`,
+    B3:`Seeing the moon, a thousand sorrows surge—
+Though autumn is not mine alone.
+— Ōe no Chisato`,
+    B4:`Weary of resentment, though even dry sleeves remain,
+My name will wither away in love’s decay.
+— Sagami`
+  };
+
+  // DOM
+  const pick = document.getElementById('pick');
+  const posterLang = document.getElementById('posterLang');
+  const verticalCk = document.getElementById('vertical');
+  const rightSrcSel = document.getElementById('rightSrc');
+
+  const single = document.getElementById('single');
+  const posterText = document.getElementById('posterText');
+
+  const two = document.getElementById('two');
+  const leftVP = document.getElementById('leftVP');
+  const grid = document.getElementById('grid');
+
+  const rightImgWrap = document.getElementById('rightImg');
+  const rightImgTag = document.getElementById('rightImgTag');
+  const rightTextWrap = document.getElementById('rightText');
+  const rightTextContent = document.getElementById('rightTextContent');
+  const rightAudioOnly = document.getElementById('rightAudioOnly');
+
+  const soundBar = document.getElementById('soundBar');
+  const playEN = document.getElementById('playEN');
+  const playJP = document.getElementById('playJP');
+  const audioEN = document.getElementById('audioEN');
+  const audioJP = document.getElementById('audioJP');
+
+  const cap = document.getElementById('cap');
+
+  // utils
+  function setHidden(el, flag){ el.classList.toggle('hidden', !!flag); }
+  function preload(url){
+    return new Promise(res=>{
+      const i=new Image();
+      i.onload = ()=> res(true);
+      i.onerror= ()=> res(false);
+      i.src = url;
+    });
+  }
+  async function firstAvailable(list){
+    for(const u of list){ if(await preload(u)) return u; }
+    return null;
+  }
+
+  function posterCandidates(key,id,lang){
+    return [
+      `${key}_${lang}.jpg`,
+      `${key}_jp.jpg`,
+      `${id}_${lang}.jpg`,
+      `${id}_jp.jpg`,
+    ];
+  }
+  function leftCandidates(key){
+    return [
+      `scene_${key}.jpg`,
+      `background_${key}.jpg`,
+      `en_${key}.jpg`, `En_${key}.jpg`, `egypt_${key}.jpg`,
+      `${key}_jp_vertical.jpg`,
+      `${key}_jp.jpg`,
+    ];
+  }
+  function rightCandidates(typeRaw, key, id){
+    const type = String(typeRaw||'').toLowerCase();
+    if(type==='scene'){
+      return [
+        /* 画像は使わないが保険として残す（非表示運用） */
+        `scene_${key}.jpg`, `background_${key}.jpg`,
+        `En_${key}.jpg`,`en_${key}.jpg`, `egypt_${key}.jpg`,
+      ];
+    }
+    if(type==='background'){
+      return [
+        /* 画像は使わないが保険として残す（非表示運用） */
+        `background_${key}.jpg`,
+        `en_${key}.jpg`,`En_${key}.jpg`, `egypt_${key}.jpg`,
+      ];
+    }
+    // egypt（右はENテキストを出す想定）
+    return [
+      `egypt_${key}.jpg`, `en_${key}.jpg`, `En_${key}.jpg`, `background_${key}.jpg`,
+    ];
+  }
+
+function runGridAssemble(src){
+  grid.style.display='block';
+  grid.innerHTML='';
+  // 既存の最終画像を消しておく
+  [...leftVP.querySelectorAll('.leftFinal')].forEach(el=>el.remove());
+
+  const rect = leftVP.getBoundingClientRect();
+  const W = Math.max(1, rect.width), H = Math.max(1, rect.height); // 正方形領域
+  const N = 7, cw=W/N, ch=H/N;
+
+  const tiles=[];
+  for(let y=0;y<N;y++){
+    for(let x=0;x<N;x++){
+      const d=document.createElement('div');
+      d.className='tile';
+      d.style.left=(x*cw)+'px';
+      d.style.top =(y*ch)+'px';
+      d.style.width =Math.ceil(cw)+'px';
+      d.style.height=Math.ceil(ch)+'px';
+      d.style.backgroundImage=`url(${src})`;
+      d.style.backgroundSize=`${W}px ${H}px`;
+      d.style.backgroundPosition=`-${x*cw}px -${y*ch}px`;
+
+      const jitterX=(Math.random()-0.5)*W*0.9;
+      const jitterY=(Math.random()-0.5)*H*0.9;
+      const rot=(Math.random()-0.5)*60;
+      d.style.transform=`translate(${jitterX}px, ${jitterY}px) rotate(${rot}deg)`;
+      d.style.opacity=0;
+      d.style.transitionDelay=(Math.random()*500)+'ms';
+
+      grid.appendChild(d); tiles.push(d);
+    }
+  }
+  // まとめて集合させる
+  void grid.offsetWidth;
+  requestAnimationFrame(()=> tiles.forEach(d=>{
+    d.style.transform='translate(0,0) rotate(0)';
+    d.style.opacity=1;
+  }));
+
+  // ▼▼▼ ここから追加：最終画像（80%）をアニメ後に表示 ▼▼▼
+  // タイルの最大ディレイ(～500ms) + 収束トランジション(～1200ms) 目安で 1.8〜2.0s
+  const FINAL_SHOW_MS = 3200; // お好みで微調整
+
+  setTimeout(()=>{
+    // 最終画像ラップを作成
+    const wrap = document.createElement('div');
+    wrap.className = 'leftFinal';
+
+    // Pickの値で寄せ方向を決める
+    if(['A3','A4','B1'].includes(pick.value)){
+      wrap.classList.add('right'); // 右寄せ
+    }else if(['B2','B3','B4'].includes(pick.value)){
+      wrap.classList.add('left');  // 左寄せ
+    }
+
+    const img = document.createElement('img');
+    img.src = src;
+    wrap.appendChild(img);
+    leftVP.appendChild(wrap);
+  }, FINAL_SHOW_MS);
+
+  // ▲▲▲ 追加ここまで ▲▲▲
+}
+
+  // 音声（存在すればボタン表示）
+  function setupAudio(key, mode){ // mode: 'scene'→EN優先, 'background'→JP優先
+    let hasEN=false, hasJP=false;
+    const en = `en_${key}.mp3`, jp = `jp_${key}.mp3`;
+    setHidden(soundBar, true); setHidden(playEN, true); setHidden(playJP, true);
+
+    audioEN.src = en; audioEN.oncanplaythrough = ()=>{ hasEN=true; setHidden(playEN,false); };
+    audioEN.onerror = ()=>{ hasEN=false; setHidden(playEN,true); };
+    audioJP.src = jp; audioJP.oncanplaythrough = ()=>{ hasJP=true; setHidden(playJP,false); };
+    audioJP.onerror = ()=>{ hasJP=false; setHidden(playJP,true); };
+
+    setTimeout(()=>{ const show = (mode==='scene'?(hasEN||hasJP):(hasJP||hasEN)); setHidden(soundBar,!show); }, 450);
+    playEN.onclick = ()=>{ audioJP.pause(); audioEN.currentTime=0; audioEN.play(); };
+    playJP.onclick = ()=>{ audioEN.pause(); audioJP.currentTime=0; audioJP.play(); };
+  }
+
+  async function render(){
+    const key = pick.value;
+    const id  = poemIdMap[key];
+    const lang = posterLang.value;
+    const useVertical = verticalCk.checked && (lang==='jp');
+    const type = String(rightSrcSel.value||'').toLowerCase();
+
+ // reset
+setHidden(single, true); setHidden(two, true);
+setHidden(rightImgWrap, true); setHidden(rightTextWrap, true);
+setHidden(rightAudioOnly, true); setHidden(soundBar, true);
+grid.style.display='none'; grid.innerHTML='';
+// 追加：前回の最終画像(80%)を削除
+[...leftVP.querySelectorAll('.leftFinal')].forEach(el=>el.remove());
+
+    if(useVertical){
+      // 2ペイン
+      setHidden(two, false);
+
+      // 左：49分割（scene → background → 他の在庫）
+      const leftUrl = await firstAvailable(leftCandidates(key));
+      if(leftUrl){ runGridAssemble(leftUrl); }
+
+      // 右：
+      if(type==='egypt'){
+        // ENテキスト（黒地白字）
+        rightTextContent.textContent = (enText[key] || '(No English text)');
+        setHidden(rightTextWrap, false);
+      }else if(type==='scene' || type==='background'){
+        // 音声のみ（黒画面）
+        setHidden(rightAudioOnly, false);
+        setupAudio(key, type); // scene→EN優先, background→JP優先
+        // 画像は出さない運用
+      }else{
+        // 保険（基本来ない）
+        const rightUrl = await firstAvailable(rightCandidates(type, key, id));
+        if(rightUrl){ rightImgTag.src = rightUrl; setHidden(rightImgWrap, false); }
+      }
+
+      cap.innerHTML = `<b>#${id}</b> — ${poet[id]||''} | Left: 49-grid (square) / Right: ${type}`;
+    }else{
+      // Poster（文字ポスター）
+      const text = (lang==='jp') ? jpText[key] : enText[key];
+      posterText.textContent = text || '(No text)';
+      setHidden(single, false);
+      cap.innerHTML = `<b>#${id}</b> — ${poet[id]||''} | ${lang.toUpperCase()} Poster (text, smaller)`;
+    }
+  }
+
+  document.getElementById('show').onclick = render;
+  document.addEventListener('DOMContentLoaded', ()=> setTimeout(render, 0));
+  window.addEventListener('resize', ()=>{
+    const useVertical = verticalCk.checked && (posterLang.value==='jp');
+    if(useVertical) render();
+  });
+})();
+</script>
+</body>
+</html>
