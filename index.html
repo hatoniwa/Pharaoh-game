@@ -1,456 +1,307 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>独自03_dualPanels_v3 — 左=正方形49分割 / 右=テキスト or 音声のみ</title>
-<style>
-  :root{
-    --w:640px; --fg:#fff; --acc:#ffd54a;
-    /* v2より少しだけ縮小（ご要望に合わせて微調整） */
-    --posterScale: 1.25;    /* Poster（EN/JP）文字の倍率 */
-    --rightTextScale: 1.20; /* 右テキストの倍率 */
-  }
-  *{box-sizing:border-box}
-  body{
-    margin:0; background:#111; color:var(--fg);
-    font-family: system-ui,-apple-system,Segoe UI,Roboto,"Noto Sans JP",Meiryo,sans-serif;
-    display:flex; min-height:100vh; align-items:center; justify-content:center; padding:16px;
-  }
-  .app{ width:min(var(--w),95vw); }
-  .bar{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:10px 0; }
-  .sp{ flex:1 }
-  select,button,label{ background:#1a1a1a; color:#fff; border:1px solid #333; border-radius:10px; padding:8px 12px; font-size:14px; }
-  button.primary{ background:var(--acc); color:#222; border-color:#cc9; }
+    <meta charset="UTF-8">
+    <title>百の灯火 - 完全版</title>
+    <style>
+        body {
+            margin: 0;
+            background: black;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            color: white;
+            font-family: sans-serif;
+        }
 
-  /* ステージ（16:9 高さゼロ対策） */
-  .stage{ position:relative; width:100%; background:#000; border:1px solid #222; border-radius:12px; overflow:hidden; }
-  .stage::before{ content:""; display:block; padding-top:56.25%; }
-  .viewport{ position:absolute; inset:0; }
+        #game-container {
+            position: relative;
+            width: 640px;
+            height: 360px;
+            background-size: cover;
+            background-position: center;
+            box-shadow: 0 0 25px rgba(0, 255, 255, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            transition: background-image 1.5s ease-in-out; /* 背景画像の切り替えを滑らかに */
+        }
 
-  /* 単面：文字ポスター（Vertical OFF 時） */
-  .single{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:24px; }
-  .textPoster{
-    width:100%; height:100%; background:#000; color:#fff;
-    display:flex; align-items:center; justify-content:center;
-    text-align:center; line-height:1.8; padding:26px; white-space:pre-wrap;
-    font-size: clamp(12px, calc(3.6vw * var(--posterScale)), 26px);
-    letter-spacing:.02em;
-  }
-
-  /* 2ペイン（Vertical ON） */
-  .twopane{ position:absolute; inset:0; display:grid; grid-template-columns:46% 54%; gap:0; }
-  .leftPane, .rightPane{ position:relative; overflow:hidden; }
-
-  /* 左パネル：正方形（1:1） */
-  .leftPaneInner{ position:absolute; left:0; top:50%; width:100%; transform:translateY(-50%); }
-  .leftPaneInner::before{ content:""; display:block; padding-top:100%; } /* 正方形 */
-  .leftVP{ position:absolute; inset:0; }
-
-  .grid7{ position:absolute; inset:0; display:none; }
-  .grid7 .tile{
-    position:absolute; background-repeat:no-repeat;
-    opacity:0; transition: transform 1.2s ease, opacity 1.2s ease;
-    will-change: transform, opacity;
-  }
-
-  /* 右：静止画像 or テキスト or 音声のみ（黒画面） */
-  .rightImg{ position:absolute; inset:0; }
-  .rightImg img{ width:100%; height:100%; object-fit:cover; display:block; }
-  .rightText{ position:absolute; inset:0; background:#000; color:#fff; padding:20px; display:flex; align-items:center; justify-content:center; }
-  .rightText .content{
-    max-width:94%; white-space:pre-wrap; line-height:1.8; text-align:left;
-    font-size: clamp(12px, calc(3.2vw * var(--rightTextScale)), 24px);
-    letter-spacing:.02em;
-  }
-  .rightAudioOnly{ position:absolute; inset:0; background:#000; }
-
-  /* 右：サウンド */
-  .soundBar{
-    position:absolute; right:10px; bottom:10px; display:flex; gap:8px; z-index:5;
-    background:rgba(0,0,0,.6); border:1px solid #444; border-radius:10px; padding:6px 8px;
-  }
-  .soundBar button{ background:#222; border:1px solid #555; border-radius:8px; padding:6px 10px; color:#fff; }
-  .soundBar button:hover{ background:#333; }
-
-  /* キャプション */
-  .caption{
-    position:absolute; left:0; right:0; bottom:0; padding:10px 12px;
-    background:linear-gradient(180deg,rgba(0,0,0,0) 0%,rgba(0,0,0,.65) 40%,rgba(0,0,0,.75) 100%);
-    font-size:13px; z-index:3;
-  }
-
-  .hidden{ display:none !important; }
-
-/* 左パネル 最終画像（80%） */
-.leftFinal{
-  position:absolute;
-  inset:0;
-  display:grid;
-  place-items:center;
-  pointer-events:none;
-}
-.leftFinal img{
-  width:110%;
-  height:110%;
-  object-fit:cover;      /* 正方形いっぱいに収め、切れる方向はカバー */
-  transform:scale(0.9);  /* ← ここが 80% 指定 */
-  transform-origin:center;
-}
-
-/* 寄せ指定：A3/A4/B1→右寄せ / B2/B3/B4→左寄せ */
-.leftFinal.right img { object-position: left center; } /* 右寄せ＝右側を見せる */
-.leftFinal.left  img { object-position: right  center; } /* 左寄せ＝左側を見せる */
-
-</style>
-</head>
-<body>
-<div class="app">
-  <div class="bar">
-    <label>Pick
-      <select id="pick">
-        <option value="A1">A1 — Komachi (009)</option>
-        <option value="A2" selected>A2 — Ryōzen (070)</option>
-        <option value="A3">A3 — Sosei (021)</option>
-        <option value="A4">A4 — Akahito (004)</option>
-        <option value="B1">B1 — Atsutada (043)</option>
-        <option value="B2">B2 — Saigyō (086)</option>
-        <option value="B3">B3 — Ōe no Chisato (023)</option>
-        <option value="B4">B4 — Sagami (065)</option>
-      </select>
-    </label>
-    <label>Poster
-      <select id="posterLang">
-        <option value="jp" selected>JP</option>
-        <option value="en">EN</option>
-      </select>
-    </label>
-    <label><input type="checkbox" id="vertical" checked> Vertical ON (JP)</label>
-    <label>Right Panel
-      <select id="rightSrc">
-        <option value="egypt" selected>egypt_*.jpg → EN text</option>
-        <option value="scene">scene_*.jpg → (EN)Voice only</option>
-        <option value="background">background_*.jpg → (JP)Voice only</option>
-      </select>
-    </label>
-    <div class="sp"></div>
-    <button id="show" class="primary">Show</button>
-  </div>
-
-  <div class="stage">
-    <div class="viewport">
-      <!-- Poster（Vertical OFF） -->
-      <div id="single" class="single hidden">
-        <div id="posterText" class="textPoster"></div>
-      </div>
-
-      <!-- Vertical ON：2ペイン -->
-      <div id="two" class="twopane hidden">
-        <div class="leftPane">
-          <div class="leftPaneInner">
-            <div class="leftVP" id="leftVP">
-              <div id="grid" class="grid7"></div>
-            </div>
-          </div>
-        </div>
-        <div class="rightPane">
-          <div id="rightImg" class="rightImg hidden"><img id="rightImgTag" alt=""></div>
-          <div id="rightText" class="rightText hidden"><div class="content" id="rightTextContent"></div></div>
-          <div id="rightAudioOnly" class="rightAudioOnly hidden"></div>
-          <div class="soundBar hidden" id="soundBar">
-            <button id="playEN" class="hidden">EN Voice</button>
-            <button id="playJP" class="hidden">JP Voice</button>
-            <audio id="audioEN"></audio>
-            <audio id="audioJP"></audio>
-          </div>
-        </div>
-      </div>
-
-      <div class="caption" id="cap"></div>
-    </div>
-  </div>
-</div>
+      <!-- body内の #game-container の直後に Start ボタンを置く -->
+      <button id="startBtn" style="
+      position:fixed; inset:0; margin:auto; width:220px; height:60px;
+      background:#ffd54a; color:#111; border:0; border-radius:12px;
+      font-weight:700; font-size:18px; cursor:pointer; z-index:50;">Start</button>
 
 <script>
-(function(){
-  const poemIdMap = { A1:'009', A2:'070', A3:'021', A4:'004', B1:'043', B2:'086', B3:'023', B4:'065' };
-  const poet = {
-    '009':'Ono no Komachi','070':'Ryōzen Hōshi','021':'Sosei Hōshi','004':'Yamabe no Akahito',
-    '043':'Fujiwara no Atsutada','086':'Saigyō Hōshi','023':'Ōe no Chisato','065':'Sagami'
-  };
-
-  // JP/EN テキスト（横書き）
-  const jpText = {
-    A1:`花の色は うつりにけりな いたづらに
-わが身世にふる ながめせしまに
-— 小野小町`,
-    A2:`さびしさに 宿を立ち出でて ながむれば
-いづこも同じ 秋の夕暮れ
-— 良暹法師`,
-    A3:`今来むと いひしばかりに 長月の
-有明の月を 待ち出でつるかな
-— 素性法師`,
-    A4:`田子の浦に うち出でてみれば 白妙の
-富士の高嶺に 雪は降りつつ
-— 山部赤人`,
-    B1:`逢ひ見ての のちの心に くらぶれば
-昔は物を 思はざりけり
-— 藤原敦忠`,
-    B2:`嘆けとて 月やは物を 思はする
-かこち顔なる わが涙かな
-— 西行法師`,
-    B3:`月みれば ちぢにものこそ 悲しけれ
-わが身一つの 秋にはあらねど
-— 大江千里`,
-    B4:`恨みわび ほさぬ袖だに あるものを
-恋に朽ちなむ 名こそをしけれ
-— 相模`
-  };
-  const enText = {
-    A1:`The colors of flowers fade away in vain,
-As in this fleeting world my life drifts on in endless rains.
-— Ono no Komachi`,
-    A2:`Lonely, I stepped outside my hut and looked—
-Everywhere the same: an autumn evening.
-— Ryōzen Hōshi`,
-    A3:`“I’ll come tonight,” you said—so I stayed up,
-Waiting for the long month’s dawning moon.
-— Sosei Hōshi`,
-    A4:`At Tago Bay I came out and beheld:
-Pure white snow falling on Mount Fuji’s lofty peak.
-— Yamabe no Akahito`,
-    B1:`Compared with how my heart has been since we met,
-In former days I scarcely knew what longing was.
-— Fujiwara no Atsutada`,
-    B2:`“Lament!”—does the moon make me grieve?
-No—my tears themselves blame the moon.
-— Saigyō`,
-    B3:`Seeing the moon, a thousand sorrows surge—
-Though autumn is not mine alone.
-— Ōe no Chisato`,
-    B4:`Weary of resentment, though even dry sleeves remain,
-My name will wither away in love’s decay.
-— Sagami`
-  };
-
-  // DOM
-  const pick = document.getElementById('pick');
-  const posterLang = document.getElementById('posterLang');
-  const verticalCk = document.getElementById('vertical');
-  const rightSrcSel = document.getElementById('rightSrc');
-
-  const single = document.getElementById('single');
-  const posterText = document.getElementById('posterText');
-
-  const two = document.getElementById('two');
-  const leftVP = document.getElementById('leftVP');
-  const grid = document.getElementById('grid');
-
-  const rightImgWrap = document.getElementById('rightImg');
-  const rightImgTag = document.getElementById('rightImgTag');
-  const rightTextWrap = document.getElementById('rightText');
-  const rightTextContent = document.getElementById('rightTextContent');
-  const rightAudioOnly = document.getElementById('rightAudioOnly');
-
-  const soundBar = document.getElementById('soundBar');
-  const playEN = document.getElementById('playEN');
-  const playJP = document.getElementById('playJP');
-  const audioEN = document.getElementById('audioEN');
-  const audioJP = document.getElementById('audioJP');
-
-  const cap = document.getElementById('cap');
-
-  // utils
-  function setHidden(el, flag){ el.classList.toggle('hidden', !!flag); }
-  function preload(url){
-    return new Promise(res=>{
-      const i=new Image();
-      i.onload = ()=> res(true);
-      i.onerror= ()=> res(false);
-      i.src = url;
-    });
-  }
-  async function firstAvailable(list){
-    for(const u of list){ if(await preload(u)) return u; }
-    return null;
+  // 追加：プリロード（存在する画像名を列挙）
+  const preloadList = [
+    'intro_cover_49.jpg','background_after_intro.jpg','second_background.jpg',
+    'scene1.jpg','scene2.jpg','scene3.jpg','scene4.jpg','scene5.jpg',
+    'egypt0.jpg','egypt1.jpg','egypt2.jpg','egypt3.jpg','egypt4.jpg','egypt5.jpg','egypt6.jpg','egypt7.jpg','egypt8.jpg'
+  ];
+  function preloadImages(list){
+    return Promise.all(list.map(src => new Promise(res=>{
+      const img = new Image();
+      img.onload = img.onerror = () => res(true);
+      img.src = src;
+    })));
   }
 
-  function posterCandidates(key,id,lang){
-    return [
-      `${key}_${lang}.jpg`,
-      `${key}_jp.jpg`,
-      `${id}_${lang}.jpg`,
-      `${id}_jp.jpg`,
-    ];
-  }
-  function leftCandidates(key){
-    return [
-      `scene_${key}.jpg`,
-      `background_${key}.jpg`,
-      `en_${key}.jpg`, `En_${key}.jpg`, `egypt_${key}.jpg`,
-      `${key}_jp_vertical.jpg`,
-      `${key}_jp.jpg`,
-    ];
-  }
-  function rightCandidates(typeRaw, key, id){
-    const type = String(typeRaw||'').toLowerCase();
-    if(type==='scene'){
-      return [
-        /* 画像は使わないが保険として残す（非表示運用） */
-        `scene_${key}.jpg`, `background_${key}.jpg`,
-        `En_${key}.jpg`,`en_${key}.jpg`, `egypt_${key}.jpg`,
-      ];
-    }
-    if(type==='background'){
-      return [
-        /* 画像は使わないが保険として残す（非表示運用） */
-        `background_${key}.jpg`,
-        `en_${key}.jpg`,`En_${key}.jpg`, `egypt_${key}.jpg`,
-      ];
-    }
-    // egypt（右はENテキストを出す想定）
-    return [
-      `egypt_${key}.jpg`, `en_${key}.jpg`, `En_${key}.jpg`, `background_${key}.jpg`,
-    ];
-  }
-
-function runGridAssemble(src){
-  grid.style.display='block';
-  grid.innerHTML='';
-  // 既存の最終画像を消しておく
-  [...leftVP.querySelectorAll('.leftFinal')].forEach(el=>el.remove());
-
-  const rect = leftVP.getBoundingClientRect();
-  const W = Math.max(1, rect.width), H = Math.max(1, rect.height); // 正方形領域
-  const N = 7, cw=W/N, ch=H/N;
-
-  const tiles=[];
-  for(let y=0;y<N;y++){
-    for(let x=0;x<N;x++){
-      const d=document.createElement('div');
-      d.className='tile';
-      d.style.left=(x*cw)+'px';
-      d.style.top =(y*ch)+'px';
-      d.style.width =Math.ceil(cw)+'px';
-      d.style.height=Math.ceil(ch)+'px';
-      d.style.backgroundImage=`url(${src})`;
-      d.style.backgroundSize=`${W}px ${H}px`;
-      d.style.backgroundPosition=`-${x*cw}px -${y*ch}px`;
-
-      const jitterX=(Math.random()-0.5)*W*0.9;
-      const jitterY=(Math.random()-0.5)*H*0.9;
-      const rot=(Math.random()-0.5)*60;
-      d.style.transform=`translate(${jitterX}px, ${jitterY}px) rotate(${rot}deg)`;
-      d.style.opacity=0;
-      d.style.transitionDelay=(Math.random()*500)+'ms';
-
-      grid.appendChild(d); tiles.push(d);
-    }
-  }
-  // まとめて集合させる
-  void grid.offsetWidth;
-  requestAnimationFrame(()=> tiles.forEach(d=>{
-    d.style.transform='translate(0,0) rotate(0)';
-    d.style.opacity=1;
-  }));
-
-  // ▼▼▼ ここから追加：最終画像（80%）をアニメ後に表示 ▼▼▼
-  // タイルの最大ディレイ(～500ms) + 収束トランジション(～1200ms) 目安で 1.8〜2.0s
-  const FINAL_SHOW_MS = 3200; // お好みで微調整
-
-  setTimeout(()=>{
-    // 最終画像ラップを作成
-    const wrap = document.createElement('div');
-    wrap.className = 'leftFinal';
-
-    // Pickの値で寄せ方向を決める
-    if(['A3','A4','B1'].includes(pick.value)){
-      wrap.classList.add('right'); // 右寄せ
-    }else if(['B2','B3','B4'].includes(pick.value)){
-      wrap.classList.add('left');  // 左寄せ
-    }
-
-    const img = document.createElement('img');
-    img.src = src;
-    wrap.appendChild(img);
-    leftVP.appendChild(wrap);
-  }, FINAL_SHOW_MS);
-
-  // ▲▲▲ 追加ここまで ▲▲▲
-}
-
-  // 音声（存在すればボタン表示）
-  function setupAudio(key, mode){ // mode: 'scene'→EN優先, 'background'→JP優先
-    let hasEN=false, hasJP=false;
-    const en = `en_${key}.mp3`, jp = `jp_${key}.mp3`;
-    setHidden(soundBar, true); setHidden(playEN, true); setHidden(playJP, true);
-
-    audioEN.src = en; audioEN.oncanplaythrough = ()=>{ hasEN=true; setHidden(playEN,false); };
-    audioEN.onerror = ()=>{ hasEN=false; setHidden(playEN,true); };
-    audioJP.src = jp; audioJP.oncanplaythrough = ()=>{ hasJP=true; setHidden(playJP,false); };
-    audioJP.onerror = ()=>{ hasJP=false; setHidden(playJP,true); };
-
-    setTimeout(()=>{ const show = (mode==='scene'?(hasEN||hasJP):(hasJP||hasEN)); setHidden(soundBar,!show); }, 450);
-    playEN.onclick = ()=>{ audioJP.pause(); audioEN.currentTime=0; audioEN.play(); };
-    playJP.onclick = ()=>{ audioEN.pause(); audioJP.currentTime=0; audioJP.play(); };
-  }
-
-  async function render(){
-    const key = pick.value;
-    const id  = poemIdMap[key];
-    const lang = posterLang.value;
-    const useVertical = verticalCk.checked && (lang==='jp');
-    const type = String(rightSrcSel.value||'').toLowerCase();
-
- // reset
-setHidden(single, true); setHidden(two, true);
-setHidden(rightImgWrap, true); setHidden(rightTextWrap, true);
-setHidden(rightAudioOnly, true); setHidden(soundBar, true);
-grid.style.display='none'; grid.innerHTML='';
-// 追加：前回の最終画像(80%)を削除
-[...leftVP.querySelectorAll('.leftFinal')].forEach(el=>el.remove());
-
-    if(useVertical){
-      // 2ペイン
-      setHidden(two, false);
-
-      // 左：49分割（scene → background → 他の在庫）
-      const leftUrl = await firstAvailable(leftCandidates(key));
-      if(leftUrl){ runGridAssemble(leftUrl); }
-
-      // 右：
-      if(type==='egypt'){
-        // ENテキスト（黒地白字）
-        rightTextContent.textContent = (enText[key] || '(No English text)');
-        setHidden(rightTextWrap, false);
-      }else if(type==='scene' || type==='background'){
-        // 音声のみ（黒画面）
-        setHidden(rightAudioOnly, false);
-        setupAudio(key, type); // scene→EN優先, background→JP優先
-        // 画像は出さない運用
-      }else{
-        // 保険（基本来ない）
-        const rightUrl = await firstAvailable(rightCandidates(type, key, id));
-        if(rightUrl){ rightImgTag.src = rightUrl; setHidden(rightImgWrap, false); }
-      }
-
-      cap.innerHTML = `<b>#${id}</b> — ${poet[id]||''} | Left: 49-grid (square) / Right: ${type}`;
-    }else{
-      // Poster（文字ポスター）
-      const text = (lang==='jp') ? jpText[key] : enText[key];
-      posterText.textContent = text || '(No text)';
-      setHidden(single, false);
-      cap.innerHTML = `<b>#${id}</b> — ${poet[id]||''} | ${lang.toUpperCase()} Poster (text, smaller)`;
-    }
-  }
-
-  document.getElementById('show').onclick = render;
-  document.addEventListener('DOMContentLoaded', ()=> setTimeout(render, 0));
-  window.addEventListener('resize', ()=>{
-    const useVertical = verticalCk.checked && (posterLang.value==='jp');
-    if(useVertical) render();
+  // 変更：自動開始ではなく Start ボタンで開始
+  const startBtn = document.getElementById('startBtn');
+  startBtn.addEventListener('click', async ()=>{
+    startBtn.disabled = true; startBtn.textContent = 'Loading...';
+    await preloadImages(preloadList);      // 先に読み込む
+    startBtn.style.display = 'none';       // ボタンを消す
+    setTimeout(startIntroAnimation, 300);  // あなたの既存関数を呼ぶ
   });
-})();
+
+  // 既存の window.onload での自動開始は削除 or 無効化
+  // window.onload = () => setTimeout(startIntroAnimation, 1000);
 </script>
+
+        #intro-cover {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 10;
+        }
+
+        #first-background, #second-background {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0;
+            transition: opacity 1.5s ease-in-out;
+        }
+
+        #first-background { z-index: 5; }
+        #second-background { z-index: 6; }
+        
+        #animation-pieces-container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+        }
+
+        .animated-cover-piece {
+            position: absolute;
+            /* background-imageはJavaScriptで設定するため削除 */
+            background-size: 640px 360px;
+            opacity: 1;
+            transition: transform 1.5s ease-out, opacity 1.5s ease-out;
+        }
+
+        #narration-text {
+            bottom: 65px;
+            position: absolute;
+            z-index: 15;
+            color: white;
+            font-size: 22px;
+            font-weight: bold;
+            text-align: center;
+            background-color: black;
+            padding: 12px 20px;
+            border-radius: 8px;
+            opacity: 0;
+            transition: opacity 2s ease-in;
+        }
+
+        #subtitle {
+            position: absolute;
+            bottom: 20px;
+            width: 90%;
+            background-color: rgba(0, 0, 0, 0.6);
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 18px;
+            opacity: 0;
+            transition: opacity 1s;
+            z-index: 15;
+        }
+
+        #countdown-screen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%); /* 中央揃えを修正 */
+            font-size: 32px;
+            font-weight: bold;
+            z-index: 20;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <img id="second-background" src="second_background.jpg" alt="次の背景">
+        <img id="first-background" src="background_after_intro.jpg" alt="最初の裏背景">
+        <img id="intro-cover" src="intro_cover_49.jpg" alt="カバー画像">
+        
+        <div id="animation-pieces-container"></div>
+        <div id="narration-text">This poem hides a secret story.</div>
+        <div id="subtitle"></div>
+        <div id="countdown-screen"></div> </div>
+
+    <script>
+        // === DOM要素の取得 ===
+        const gameContainer = document.getElementById('game-container');
+        const introCover = document.getElementById('intro-cover');
+        const firstBackground = document.getElementById('first-background');
+        const secondBackground = document.getElementById('second-background');
+        const animationPiecesContainer = document.getElementById('animation-pieces-container');
+        const narrationText = document.getElementById('narration-text');
+        const subtitle = document.getElementById('subtitle');
+        const countdownScreen = document.getElementById('countdown-screen');
+
+        // === 字幕データ ===
+        const subtitlesKomachi_en = [
+            { image: "scene1.jpg", text: "If you light the lamps for a hundred nights, then… I shall accept your feelings." },
+            { image: "scene2.jpg", text: "Fujihara no Sanetaka climbed the freezing hill even in stormy nights—carrying the promise with Komachi in his heart." },
+            { image: "scene3.jpg", text: "On the 99th night, he lit the lamp even while bedridden. That light was the flame of his very life." },
+            { image: "scene4.jpg", text: "On the 100th morning, his lifeless body lay beneath the final lantern… the last light left unlit." },
+            { image: "scene5.jpg", text: "The true darkness was not in the night, but in the heart that couldn’t believe in love. Now… let me light the final lamp." }
+        ];
+
+        const subtitlesEgypt_en = [
+            { image: "egypt0.jpg", text: "There is a similar story told in ancient Egypt." },
+            { image: "egypt1.jpg", text: "Nefertis: A priestess of divine beauty who served the temple. Though loyal to the king, she longed for freedom deep in her heart." },
+            { image: "egypt2.jpg", text: "Aknam: A young soldier. His heart was devoted solely to Nefertis." },
+            { image: "egypt3.jpg", text: "\"If you light the lamps for a hundred nights—then I shall accept your feelings.\"" },
+            { image: "egypt4.jpg", text: "Through storms, Aknam climbed the freezing hill each night, carrying the promise with Nefertis in his heart." },
+            { image: "egypt5.jpg", text: "On the 99th night, he fell into the river on his return. That light was his very life’s flame." },
+            { image: "egypt6.jpg", text: "On the 100th morning, Nefertis found his cold body by the riverside. \"Why... why did you have to die?\"" },
+            { image: "egypt7.jpg", text: "She wept. The final lamp remained unlit, alone in the dawn." },
+            { image: "egypt8.jpg", text: "When will this long rain and my tears ever stop?" }
+        ];
+
+        // === 状態管理 ===
+        let currentSubtitleIndex = 0;
+        let currentMode = "komachi_en";
+
+        // === ユーティリティ関数 ===
+        const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+        // === メインロジック ===
+
+        /**
+         * イントロアニメーションを開始
+         */
+        async function startIntroAnimation() {
+            // 1. カバー画像を非表示にし、ピースを生成
+            introCover.style.display = 'none';
+            const coverImageUrl = introCover.src;
+            const pieceCountX = 7;
+            const pieceCountY = 7;
+            const containerWidth = gameContainer.offsetWidth;
+            const containerHeight = gameContainer.offsetHeight;
+            const pieceWidth = containerWidth / pieceCountX;
+            const pieceHeight = containerHeight / pieceCountY;
+
+            for (let y = 0; y < pieceCountY; y++) {
+                for (let x = 0; x < pieceCountX; x++) {
+                    const pieceDiv = document.createElement('div');
+                    pieceDiv.classList.add('animated-cover-piece');
+                    pieceDiv.style.width = `${pieceWidth}px`;
+                    pieceDiv.style.height = `${pieceHeight}px`;
+                    pieceDiv.style.left = `${x * pieceWidth}px`;
+                    pieceDiv.style.top = `${y * pieceHeight}px`;
+                    pieceDiv.style.backgroundImage = `url('${coverImageUrl}')`;
+                    pieceDiv.style.backgroundPosition = `-${x * pieceWidth}px -${y * pieceHeight}px`;
+                    pieceDiv.style.transitionDelay = `${Math.random() * 0.6}s`;
+                    animationPiecesContainer.appendChild(pieceDiv);
+
+                    // 少し遅れてアニメーションを開始
+                    setTimeout(() => {
+                        const randomX = (Math.random() - 0.5) * containerWidth * 1.5;
+                        const randomY = (Math.random() - 0.5) * containerHeight * 1.5;
+                        const randomRotate = Math.random() * 640 - 360;
+                        pieceDiv.style.transform = `translate(${randomX}px, ${randomY}px) rotate(${randomRotate}deg)`;
+                        pieceDiv.style.opacity = 0;
+                    }, 50);
+                }
+            }
+            
+            // 2. アニメーションとテキスト表示を順次実行
+            await wait(1900);
+            animationPiecesContainer.innerHTML = '';
+            firstBackground.style.opacity = 1;
+
+            await wait(1500);
+            secondBackground.style.opacity = 1;
+
+            await wait(1500);
+            narrationText.style.opacity = 1;
+
+            await wait(3000);
+            narrationText.style.opacity = 0; // フェードアウトさせる
+            
+            await wait(1000);
+            narrationText.style.display = 'none';
+            showNextSubtitle();
+        }
+        
+        /**
+         * 物語の終わりを処理
+         */
+        function endStory() {
+            subtitle.style.opacity = 0;
+            countdownScreen.textContent = 'Fin';
+            countdownScreen.style.display = 'block';
+        }
+
+        /**
+         * 次の字幕と背景を表示
+         */
+        function showNextSubtitle() {
+            let data = (currentMode === "komachi_en") ? subtitlesKomachi_en : subtitlesEgypt_en;
+
+            // 現在のモードの物語が終了したかチェック
+            if (currentSubtitleIndex >= data.length) {
+                if (currentMode === "komachi_en") {
+                    // 小町編が終了したらエジプト編へ
+                    currentMode = "egypt_en";
+                    currentSubtitleIndex = 0;
+                    setTimeout(showNextSubtitle, 1000);
+                } else {
+                    // エジプト編が終了したら物語全体を終了
+                    endStory();
+                }
+                return;
+            }
+
+            // 1. 次のデータを取得して表示
+            const item = data[currentSubtitleIndex];
+            gameContainer.style.backgroundImage = `url('${item.image}')`;
+            subtitle.textContent = item.text;
+            subtitle.style.opacity = 1;
+            
+            // イントロ用の背景を非表示にする
+            firstBackground.style.display = 'none';
+            secondBackground.style.display = 'none';
+
+            // 2. 4秒後に字幕を非表示にし、次の字幕へ
+            setTimeout(() => {
+                subtitle.style.opacity = 0;
+                currentSubtitleIndex++;
+                setTimeout(showNextSubtitle, 1000); // 1秒後に次の字幕処理を呼び出す
+            }, 4000);
+        }
+
+        // === 実行開始 ===
+        window.onload = () => {
+            // ページ読み込み1秒後にイントロを開始
+            setTimeout(startIntroAnimation, 1000);
+        };
+    </script>
 </body>
 </html>
