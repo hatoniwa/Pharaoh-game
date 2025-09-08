@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Video + Ending Notice</title>
+  <style>
+    body {
+      margin: 0;
+      background: black;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+    #container {
+      position: relative;
+      width: 360px;
+      height: 640px;
+      background: black;
+    }
+    video {
+      width: 100%;
+      height: 100%;
+    }
+    #notice {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.85);
+      color: #ffd54a;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 22px;
+      font-weight: bold;
+      text-align: center;
+      padding: 20px;
+      opacity: 0;
+      transition: opacity 1s;
+    } 
+  </style>
+</head>
+<body>
+  <div id="container">
+    <!-- 練習用の動画ファイルを配置 -->
+    <video id="video" autoplay muted playsinline>
+      <source src="practice.mp4" type="video/mp4">
+    </video>
+    <div id="notice">
+      👉 Here’s the real deal!  
+      Open the link in the description below.
+    </div>
+  </div>
+  <script>
+    const video = document.getElementById("video");
+    const notice = document.getElementById("notice");
+
+    // 動画の長さに合わせる（例: 6秒 or 18秒）
+    const duration = 10;  // ←ここを 18 にすれば18秒版に対応
+    const noticeTime = duration - 3; // ラスト3秒で表示
+
+    video.addEventListener("timeupdate", () => {
+      if (video.currentTime >= noticeTime) {
+        notice.style.opacity = 1;
+      }
+    });
+  </script>
+</body>
+</html>
